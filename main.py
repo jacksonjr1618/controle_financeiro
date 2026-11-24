@@ -71,26 +71,80 @@ def data_valida(texto):
         return False
 
 
+def normalizar_data(texto):
+    """
+    Aceita '10122026', '10/12/2026', '4/10/2004', '10-12-2026' ou '10.12.2026'.
+    Devolve a data no formato interno AAAA-MM-DD, ou None se for inválida.
+    """
+    texto = texto.strip().replace("-", "/").replace(".", "/")
+    if "/" in texto:
+        partes = texto.split("/")
+        if len(partes) != 3:
+            return None
+        dia, mes, ano = partes[0].zfill(2), partes[1].zfill(2), partes[2]
+    else:
+        if len(texto) != 8 or not texto.isdigit():
+            return None
+        dia, mes, ano = texto[0:2], texto[2:4], texto[4:8]
+    if not (dia.isdigit() and mes.isdigit() and ano.isdigit() and len(ano) == 4):
+        return None
+    iso = ano + "-" + mes + "-" + dia
+    if data_valida(iso):
+        return iso
+    return None
+
+
+def formatar_data(iso):
+    """Converte AAAA-MM-DD para DD/MM/AAAA (é assim que o usuário vê)."""
+    return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4]
+
+
+def normalizar_mes(texto):
+    """Aceita '12/2026', '122026' ou '12-2026'. Devolve AAAA-MM ou None."""
+    texto = texto.strip().replace("-", "/").replace(".", "/")
+    if "/" in texto:
+        partes = texto.split("/")
+        if len(partes) != 2:
+            return None
+        mes, ano = partes[0].zfill(2), partes[1]
+    else:
+        if len(texto) != 6 or not texto.isdigit():
+            return None
+        mes, ano = texto[0:2], texto[2:6]
+    if not (mes.isdigit() and ano.isdigit() and len(ano) == 4):
+        return None
+    if data_valida(ano + "-" + mes + "-01"):
+        return ano + "-" + mes
+    return None
+
+
+def formatar_mes(iso_mes):
+    """Converte AAAA-MM para MM/AAAA."""
+    return iso_mes[5:7] + "/" + iso_mes[0:4]
+
+
 def ler_data(mensagem):
-    """Lê uma data AAAA-MM-DD. Enter vazio = hoje."""
+    """Lê uma data DD/MM/AAAA e devolve AAAA-MM-DD. Enter vazio = hoje."""
     while True:
         texto = input(mensagem).strip()
         if texto == "":
             return datetime.now().strftime("%Y-%m-%d")
-        if data_valida(texto):
-            return texto
-        print("  Data inválida. Use o formato AAAA-MM-DD, ex.: 2026-11-23")
+        iso = normalizar_data(texto)
+        if iso is not None:
+            return iso
+        print("  Data inválida. Use DD/MM/AAAA (ex.: 23/11/2026) ou 23112026.")
 
 
 def ler_mes(mensagem):
-    """Lê um mês no formato AAAA-MM. Enter vazio = mês atual."""
+    """Lê um mês MM/AAAA e devolve AAAA-MM. Enter vazio = mês atual."""
     while True:
         texto = input(mensagem).strip()
         if texto == "":
             return datetime.now().strftime("%Y-%m")
-        if len(texto) == 7 and data_valida(texto + "-01"):
-            return texto
-        print("  Mês inválido. Use o formato AAAA-MM, ex.: 2026-11")
+        iso = normalizar_mes(texto)
+        if iso is not None:
+            return iso
+        print("  Mês inválido. Use MM/AAAA (ex.: 11/2026) ou 112026.")
 
 
 def ler_opcao(mensagem, opcoes):
@@ -100,6 +154,18 @@ def ler_opcao(mensagem, opcoes):
         if texto in opcoes:
             return texto
         print("  Opção inválida. Escolha entre:", ", ".join(opcoes))
+
+
+def ler_escolha(titulo, opcoes):
+    """Mostra as opções numeradas e devolve o NOME da opção escolhida."""
+    print(titulo)
+    for i in range(len(opcoes)):
+        print(f"  {i + 1}) {opcoes[i]}")
+    while True:
+        texto = input("Número: ").strip()
+        if texto.isdigit() and 1 <= int(texto) <= len(opcoes):
+            return opcoes[int(texto) - 1]
+        print(f"  Opção inválida. Digite um número de 1 a {len(opcoes)}.")
 
 
 def ler_inteiro(mensagem):
@@ -140,16 +206,6 @@ def ordenar_insercao(lista, chave, decrescente=False):
             j -= 1
         resultado[j + 1] = atual
     return resultado
-
-
-def busca_sequencial_descricao(lancamentos, termo):
-    """Busca SEQUENCIAL: devolve os lançamentos cuja descrição contém o termo."""
-    termo = termo.strip().lower()
-    achados = []
-    for lanc in lancamentos:
-        if termo in lanc["descricao"].lower():
-            achados.append(lanc)
-    return achados
 
 
 def busca_binaria_id(ordenada_por_id, alvo):
@@ -420,19 +476,18 @@ def mostrar_lancamentos(lista):
     print(f"  {'ID':<4} {'DATA':<11} {'TIPO':<8} {'CATEGORIA':<12} "
           f"{'DESCRIÇÃO':<22} {'VALOR':>14}")
     for l in lista:
-        print(f"  {l['id']:<4} {l['data']:<11} {l['tipo']:<8} "
+        print(f"  {l['id']:<4} {formatar_data(l['data']):<11} {l['tipo']:<8} "
               f"{l['categoria']:<12} {l['descricao'][:22]:<22} "
               f"{formatar_moeda(l['valor']):>14}")
 
 
 def tela_cadastrar(lancamentos, pilha):
     print("\n--- Novo lançamento ---")
-    tipo = ler_opcao("Tipo (receita/despesa): ", ["receita", "despesa"])
-    print("Categorias:", ", ".join(CATEGORIAS[tipo]))
-    categoria = ler_opcao("Categoria: ", CATEGORIAS[tipo])
+    tipo = ler_escolha("Tipo:", ["receita", "despesa"])
+    categoria = ler_escolha("Categoria:", CATEGORIAS[tipo])
     descricao = ler_texto("Descrição: ")
     valor = ler_valor("Valor (R$): ")
-    data = ler_data("Data AAAA-MM-DD (Enter = hoje): ")
+    data = ler_data("Data DD/MM/AAAA, ex.: 10/12/2026 ou 10122026 (Enter = hoje): ")
 
     lanc = criar_lancamento(lancamentos, data, tipo, categoria, descricao, valor)
     lancamentos.append(lanc)
@@ -443,11 +498,10 @@ def tela_cadastrar(lancamentos, pilha):
 
 def tela_listar(lancamentos):
     print("\n--- Listar lançamentos ---")
-    print("Ordenar por: 1) data  2) valor (maior primeiro)  3) id")
-    escolha = ler_opcao("Opção: ", ["1", "2", "3"])
-    if escolha == "1":
+    escolha = ler_escolha("Ordenar por:", ["data", "valor (maior primeiro)", "id"])
+    if escolha == "data":
         lista = ordenar_insercao(lancamentos, lambda l: l["data"])
-    elif escolha == "2":
+    elif escolha == "valor (maior primeiro)":
         lista = ordenar_insercao(lancamentos, lambda l: l["valor"], True)
     else:
         lista = ordenar_insercao(lancamentos, lambda l: l["id"])
@@ -455,27 +509,21 @@ def tela_listar(lancamentos):
 
 
 def tela_buscar(lancamentos):
-    print("\n--- Buscar ---")
-    print("1) Por id (busca binária)  2) Por descrição (busca sequencial)")
-    escolha = ler_opcao("Opção: ", ["1", "2"])
-    if escolha == "1":
-        alvo = ler_inteiro("Id: ")
-        ordenada = ordenar_insercao(lancamentos, lambda l: l["id"])
-        pos, comparacoes = busca_binaria_id(ordenada, alvo)
-        if pos == -1:
-            print(f"  Id {alvo} não encontrado ({comparacoes} comparações).")
-        else:
-            print(f"  Encontrado com {comparacoes} comparação(ões):")
-            mostrar_lancamentos([ordenada[pos]])
+    print("\n--- Buscar lançamento por id (busca binária) ---")
+    alvo = ler_inteiro("Id (veja os ids em 'Listar lançamentos'): ")
+    ordenada = ordenar_insercao(lancamentos, lambda l: l["id"])
+    pos, comparacoes = busca_binaria_id(ordenada, alvo)
+    if pos == -1:
+        print(f"  Id {alvo} não encontrado ({comparacoes} comparações).")
     else:
-        termo = ler_texto("Termo: ")
-        mostrar_lancamentos(busca_sequencial_descricao(lancamentos, termo))
+        print(f"  Encontrado com {comparacoes} comparação(ões):")
+        mostrar_lancamentos([ordenada[pos]])
 
 
 def tela_relatorio(lancamentos):
     print("\n--- Relatório por período ---")
-    inicio = ler_data("Data inicial AAAA-MM-DD (Enter = hoje): ")
-    fim = ler_data("Data final   AAAA-MM-DD (Enter = hoje): ")
+    inicio = ler_data("Data inicial DD/MM/AAAA (Enter = hoje): ")
+    fim = ler_data("Data final   DD/MM/AAAA (Enter = hoje): ")
     if inicio > fim:
         print("  A data inicial é maior que a final. Invertendo.")
         inicio, fim = fim, inicio
@@ -486,7 +534,8 @@ def tela_relatorio(lancamentos):
         return
 
     receitas, despesas, saldo = calcular_totais(periodo)
-    print(f"\nPeríodo: {inicio} a {fim}  ({len(periodo)} lançamentos)")
+    print(f"\nPeríodo: {formatar_data(inicio)} a {formatar_data(fim)}  "
+          f"({len(periodo)} lançamentos)")
     print(f"  Receitas: {formatar_moeda(receitas)}")
     print(f"  Despesas: {formatar_moeda(despesas)}")
     print(f"  Saldo:    {formatar_moeda(saldo)}")
@@ -519,7 +568,7 @@ def tela_matriz(lancamentos):
         return
     cabecalho = f"  {'':<12}"
     for mes in meses:
-        cabecalho += f"{mes:>14}"
+        cabecalho += f"{formatar_mes(mes):>14}"
     print(cabecalho)
     for i in range(len(categorias)):
         linha = f"  {categorias[i]:<12}"
@@ -530,18 +579,17 @@ def tela_matriz(lancamentos):
 
 def tela_alertas(lancamentos, config):
     print("\n--- Alertas de gastos ---")
-    mes = ler_mes("Mês AAAA-MM (Enter = mês atual): ")
+    mes = ler_mes("Mês MM/AAAA (Enter = mês atual): ")
     alertas = gerar_alertas(lancamentos, config, mes)
     if len(alertas) == 0:
-        print(f"  Tudo certo em {mes}, nenhum alerta.")
+        print(f"  Tudo certo em {formatar_mes(mes)}, nenhum alerta.")
     for texto in alertas:
         print("  " + texto)
 
 
 def tela_limite(config):
     print("\n--- Definir limite mensal por categoria ---")
-    print("Categorias:", ", ".join(CATEGORIAS["despesa"]))
-    categoria = ler_opcao("Categoria: ", CATEGORIAS["despesa"])
+    categoria = ler_escolha("Categoria:", CATEGORIAS["despesa"])
     limite = ler_valor("Limite mensal (R$): ")
     config["limites"][categoria] = limite
     salvar_config(config)
@@ -567,7 +615,7 @@ def tela_meta(lancamentos, config):
     else:
         print("  Nenhuma meta definida ainda.")
 
-    if ler_opcao("Definir/alterar a meta? (s/n): ", ["s", "n"]) == "s":
+    if ler_escolha("Definir/alterar a meta?", ["sim", "não"]) == "sim":
         meta["descricao"] = ler_texto("Descrição da meta (ex.: reserva de emergência): ")
         meta["valor"] = ler_valor("Valor da meta (R$): ")
         salvar_config(config)
@@ -612,7 +660,7 @@ def mostrar_menu():
     print("\n========== CONTROLE FINANCEIRO ==========")
     print(" 1) Cadastrar receita/despesa")
     print(" 2) Listar lançamentos (ordenados)")
-    print(" 3) Buscar lançamento")
+    print(" 3) Buscar lançamento (por id)")
     print(" 4) Relatório por período")
     print(" 5) Matriz de despesas (categoria x mês)")
     print(" 6) Alertas de gastos do mês")
